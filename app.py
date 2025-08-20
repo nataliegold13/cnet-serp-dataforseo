@@ -249,7 +249,7 @@ def dataforseo_search(keyword, location_code=2840, language_code="en", exclude=(
     if not DATAFORSEO_LOGIN or not DATAFORSEO_PASSWORD:
         raise RuntimeError("DataForSEO credentials not set. Add DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD in Streamlit → Settings → Secrets.")
     
-    # Create base64 encoded credentials
+    # Create base64 encoded credentials - FIXED FORMAT
     cred_string = f"{DATAFORSEO_LOGIN}:{DATAFORSEO_PASSWORD}"
     cred_bytes = cred_string.encode('utf-8')
     cred_b64 = base64.b64encode(cred_bytes).decode('utf-8')
@@ -259,7 +259,7 @@ def dataforseo_search(keyword, location_code=2840, language_code="en", exclude=(
         'Content-Type': 'application/json'
     }
     
-    # DataForSEO request body
+    # DataForSEO request body - using correct format
     data = [{
         "keyword": keyword,
         "location_code": location_code,
@@ -267,7 +267,7 @@ def dataforseo_search(keyword, location_code=2840, language_code="en", exclude=(
         "device": "desktop",
         "os": "windows",
         "depth": 10,
-       "calculate_rectangles": False
+        "calculate_rectangles": False
     }]
     
     try:
@@ -309,6 +309,52 @@ def dataforseo_search(keyword, location_code=2840, language_code="en", exclude=(
         st.error(f"DataForSEO API error: {e}")
         return []
 
+def classify_site(url):
+    """
+    Classify a website as editorial content, service/platform, retailer, or other
+    """
+    from urllib.parse import urlparse
+    
+    domain = urlparse(url).netloc.lower()
+    if domain.startswith("www."):
+        domain = domain[4:]
+    
+    # Service/Platform providers (less likely to need date matching)
+    service_platforms = [
+        'youtube.com', 'tv.youtube.com', 'hulu.com', 'netflix.com', 'spotify.com',
+        'amazon.com', 'primevideo.com', 'disneyplus.com', 'hbomax.com', 'peacocktv.com',
+        'paramount.com', 'appletv.com', 'sling.com', 'fubo.tv', 'directv.com'
+    ]
+    
+    # Retailers/E-commerce (product pages, not editorial)
+    retailers = [
+        'bestbuy.com', 'walmart.com', 'target.com', 'homedepot.com', 'lowes.com',
+        'costco.com', 'samsclub.com', 'wayfair.com', 'ikea.com', 'ebay.com',
+        'newegg.com', 'bhphotovideo.com', 'adorama.com', 'microcenter.com'
+    ]
+    
+    # Brand/Manufacturer sites (product info, not editorial)
+    brands = [
+        'apple.com', 'samsung.com', 'sony.com', 'lg.com', 'microsoft.com',
+        'dell.com', 'hp.com', 'lenovo.com', 'asus.com', 'acer.com',
+        'coopervision.com', 'acuvue.com', 'bausch.com', 'alcon.com'
+    ]
+    
+    # Quiz/Tool sites
+    if 'quiz' in url.lower() or 'calculator' in url.lower() or 'tool' in url.lower():
+        return 'tool'
+    
+    # Check classifications
+    if any(platform in domain for platform in service_platforms):
+        return 'platform'
+    elif any(retailer in domain for retailer in retailers):
+        return 'retailer'
+    elif any(brand in domain for brand in brands):
+        return 'brand'
+    else:
+        # Default to editorial (news sites, blogs, review sites)
+        return 'editorial'
+
 def process(df, days_threshold=7, location_code=2840, language_code="en"):
     recs = []
     progress_bar = st.progress(0)
@@ -328,7 +374,10 @@ def process(df, days_threshold=7, location_code=2840, language_code="en"):
         # Get competitor results from DataForSEO
         comps = dataforseo_search(kw, location_code=location_code, language_code=language_code)
         
-        newest = None
+        newest_editorial = None
+        newest_any = None
+        editorial_count = 0
+        
         out = {
             "keyword": kw,
             "cnet_url": cnet,
@@ -338,18 +387,44 @@ def process(df, days_threshold=7, location_code=2840, language_code="en"):
         
         for i, comp in enumerate(comps, start=1):
             dt, conf = best_date(comp["url"])
+            site_type = classify_site(comp["url"])
+            
             out[f"comp{i}_title"] = comp["title"]
             out[f"comp{i}_url"] = comp["url"]
             out[f"comp{i}_date"] = dt.isoformat() if dt else None
             out[f"comp{i}_date_confidence"] = conf
+            out[f"comp{i}_type"] = site_type
             
-            if dt and (newest is None or dt > newest):
-                newest = dt
+            if dt:
+                # Track newest overall
+                if newest_any is None or dt > newest_any:
+                    newest_any = dt
+                
+                # Track newest editorial content
+                if site_type == 'editorial' and (newest_editorial is None or dt > newest_editorial):
+                    newest_editorial = dt
+                    editorial_count += 1
         
-        out["max_comp_date"] = newest.isoformat() if newest else None
-        diff = (newest - c_dt).days if (newest and c_dt) else None
-        out["date_diff_days"] = diff
-        out["needs_update"] = bool(diff is not None and diff > days_threshold)
+        # Calculate differences for both editorial and any competitor
+        out["max_comp_date"] = newest_any.isoformat() if newest_any else None
+        out["max_editorial_date"] = newest_editorial.isoformat() if newest_editorial else None
+        
+        diff_any = (newest_any - c_dt).days if (newest_any and c_dt) else None
+        diff_editorial = (newest_editorial - c_dt).days if (newest_editorial and c_dt) else None
+        
+        out["date_diff_days"] = diff_any
+        out["editorial_diff_days"] = diff_editorial
+        
+        # Two-tier update recommendation
+        if diff_editorial is not None and diff_editorial > days_threshold:
+            out["needs_update"] = True
+            out["update_priority"] = "High"
+        elif diff_any is not None and diff_any > days_threshold:
+            out["needs_update"] = True
+            out["update_priority"] = "Low (non-editorial competitor)"
+        else:
+            out["needs_update"] = False
+            out["update_priority"] = "None"
         
         recs.append(out)
     
@@ -435,7 +510,7 @@ if st.button("🚀 Run Analysis", type="primary"):
     st.subheader("3) Results")
     
     # Summary metrics
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         total = len(res)
         st.metric("Total Pages Analyzed", total)
@@ -443,11 +518,22 @@ if st.button("🚀 Run Analysis", type="primary"):
         needs_update = res["needs_update"].sum()
         st.metric("Pages Needing Update", needs_update)
     with col3:
+        high_priority = len(res[res["update_priority"] == "High"])
+        st.metric("High Priority Updates", high_priority)
+    with col4:
         pct = (needs_update / total * 100) if total > 0 else 0
         st.metric("Update Rate", f"{pct:.1f}%")
     
-    # Show results
-    st.dataframe(res, use_container_width=True)
+    # Show results with color coding
+    st.dataframe(
+        res.style.apply(lambda row: ['background-color: #ffcccc' if row['update_priority'] == 'High' 
+                                      else 'background-color: #fff3cd' if row['update_priority'] == 'Low (non-editorial competitor)'
+                                      else '' for _ in row], axis=1),
+        use_container_width=True
+    )
+    
+    # Legend
+    st.caption("🔴 High Priority = Editorial competitors are fresher | 🟡 Low Priority = Only platforms/retailers are fresher")
     
     # Download button
     csv_data = res.to_csv(index=False).encode("utf-8")
@@ -458,11 +544,24 @@ if st.button("🚀 Run Analysis", type="primary"):
         mime="text/csv"
     )
     
-    # Show pages needing updates
+    # Show pages needing updates with priority
     if needs_update > 0:
         st.subheader("📝 Pages Requiring Updates")
-        updates_needed = res[res["needs_update"] == True][["keyword", "cnet_url", "date_diff_days"]]
+        updates_needed = res[res["needs_update"] == True][
+            ["keyword", "cnet_url", "update_priority", "date_diff_days", "editorial_diff_days"]
+        ].sort_values("update_priority")
         st.dataframe(updates_needed, use_container_width=True)
+        
+        # Show competitor type breakdown
+        st.subheader("🔍 Competitor Type Analysis")
+        for idx, row in res[res["needs_update"] == True].iterrows():
+            st.write(f"**{row['keyword']}**")
+            for i in range(1, 4):
+                if f"comp{i}_url" in row and row[f"comp{i}_url"]:
+                    comp_type = row.get(f"comp{i}_type", "unknown")
+                    comp_date = row.get(f"comp{i}_date", "No date")
+                    st.write(f"  • Competitor {i}: {comp_type} - {row[f'comp{i}_url'][:50]}... (Updated: {comp_date})")
+            st.divider()
 else:
     if DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD:
         st.success("✅ DataForSEO credentials found. Ready to run!")
