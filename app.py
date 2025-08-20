@@ -309,51 +309,403 @@ def dataforseo_search(keyword, location_code=2840, language_code="en", exclude=(
         st.error(f"DataForSEO API error: {e}")
         return []
 
-def classify_site(url):
+# ===== Expanded classification lists (cleaned & deduped) =====
+
+# --- Service / platform domains ---
+meal_delivery_platforms = [
+    'hellofresh.com','blueapron.com','homechef.com',
+    'sunbasket.com','everyplate.com','factor75.com',
+    'greenchef.com','gobble.com','hungryroot.com',
+    'freshly.com','cookunity.com','trifecta.com',
+    'snapkitchen.com','dailyharvest.com','purple-carrot.com'
+]
+
+vpn_platforms = [
+    'nordvpn.com','expressvpn.com','surfshark.com',
+    'protonvpn.com','privateinternetaccess.com','mullvad.net',
+    'cyberghostvpn.com','ipvanish.com','hotspotshield.com',
+    'windscribe.com','purevpn.com','tunnelbear.com'
+]
+
+hosting_platforms = [
+    'hostinger.com','bluehost.com','siteground.com',
+    'godaddy.com','namecheap.com','dreamhost.com',
+    'a2hosting.com','inmotionhosting.com','hostgator.com',
+    'ionos.com','liquidweb.com','kinsta.com',
+    'wpengine.com','nexcess.net','greengeeks.com'
+]
+
+# Claude listed cloud *storage* / software—still treated as platforms
+cloud_services = [
+    'dropbox.com','box.com','pcloud.com',
+    'sync.com','mega.nz','idrive.com',
+    'backblaze.com','carbonite.com','spideroak.com'
+]
+
+# Identity/security services (remove paths)
+security_services = [
+    'lifelock.com','identityguard.com','idshield.com',
+    'identityforce.com','experian.com','aura.com','idnotify.com'
+]
+
+# Streaming / entertainment (fixed Paramount & Apple TV, include both YT TV domains)
+streaming_platforms = [
+    'netflix.com','hulu.com','peacocktv.com',
+    'paramountplus.com','max.com','tv.apple.com',
+    'disneyplus.com','fubo.tv','sling.com',
+    'youtubetv.com','tv.youtube.com','philo.com','directv.com'
+]
+
+# Phone / internet (fixed Mint/Cricket/Boost; MetroPCS legacy kept)
+telecom_services = [
+    'verizon.com','att.com','t-mobile.com',
+    'mintmobile.com','visible.com','cricketwireless.com',
+    'boostmobile.com','metropcs.com','spectrum.com',
+    'xfinity.com','cox.com','frontier.com'
+]
+
+# --- Retailers (keep brands out of here) ---
+electronics_retailers = [
+    'bestbuy.com','bhphotovideo.com','adorama.com',
+    'microcenter.com','newegg.com','crutchfield.com',
+    'abt.com','pcrichard.com','frys.com'
+]
+
+general_retailers = [
+    'amazon.com','walmart.com','target.com',
+    'costco.com','samsclub.com','bjs.com',
+    'macys.com','kohls.com','jcpenney.com'
+]
+
+home_retailers = [
+    'homedepot.com','lowes.com','menards.com',
+    'acehardware.com','wayfair.com','ikea.com',
+    'overstock.com','build.com','ferguson.com'
+]
+
+# don’t include brand stores here (moved to brands)
+mattress_retailers = [
+    'mattressfirm.com','us-mattress.com'
+]
+
+# --- Brands / manufacturers ---
+mattress_brands = [
+    'casper.com','purple.com','tuftandneedle.com',
+    'saatva.com','helix.com','nectar.com',
+    'leesa.com','amerisleep.com','avocado.com',
+    'layla.com','winkbed.com','dreamcloud.com',
+    'bear.com','nolah.com','puffy.com',
+    'novilla.net','zinus.com','sweetnight.com',
+    'sleepnumber.com','tempurpedic.com'
+]
+
+phone_brands = [
+    'apple.com','samsung.com','google.com',
+    'oneplus.com','motorola.com','nokia.com',
+    'xiaomi.com','oppo.com','vivo.com',
+    'nothing.tech','asus.com','sony.com'
+]
+
+computer_brands = [
+    'dell.com','hp.com','lenovo.com',
+    'asus.com','acer.com','msi.com',
+    'razer.com','alienware.com','framework.com'
+]
+
+tv_brands = [
+    'lg.com','samsung.com','sony.com',
+    'tcl.com','hisense.com','vizio.com',
+    'panasonic.com','sharp.com','philips.com'
+]
+
+audio_brands = [
+    'bose.com','jbl.com','sennheiser.com',
+    'sony.com','beats.com','jabra.com',
+    'anker.com','soundcore.com','skullcandy.com',
+    'ultimate-ears.com','marshall.com',
+    'bowers-wilkins.com','klipsch.com'
+]
+
+appliance_brands = [
+    'whirlpool.com','ge.com','kitchenaid.com',
+    'frigidaire.com','bosch.com','electrolux.com',
+    'maytag.com','kenmore.com','dyson.com',
+    'sharkclean.com','bissell.com','hoover.com',
+    'irobot.com','miele.com','thermador.com'
+]
+
+kitchen_brands = [
+    'cuisinart.com','kitchenaid.com','ninja.com',
+    'vitamix.com','instantpot.com','keurig.com',
+    'nespresso.com','breville.com','delonghi.com',
+    'hamiltonbeach.com','oster.com','blackanddecker.com'
+]
+
+outdoor_brands = [
+    'weber.com','traeger.com','biggreenegg.com',
+    'kamadojoe.com','charbroil.com','coleman.com',
+    'yeti.com','rtic.com','pelican.com',
+    'husqvarna.com','toro.com','ryobi.com',
+    'egopowerplus.com','worx.com','greenworks.com'
+]
+
+security_brands = [
+    'arlo.com','ring.com','nest.com',
+    'wyze.com','eufy.com','reolink.com',
+    'lorex.com','vivint.com','adt.com',
+    'simplisafe.com','goabode.com','canary.is'
+]
+
+networking_brands = [
+    'netgear.com','linksys.com','tplink.com','tp-link.com',
+    'asus.com','orbi.com','eero.com',
+    'ubiquiti.com','arris.com','motorola.com'
+]
+
+fitness_brands = [
+    'fitbit.com','garmin.com','whoop.com',
+    'ouraring.com','peloton.com','nordictrack.com',
+    'bowflex.com','nautilus.com','proform.com'
+]
+
+smart_home_brands = [
+    'philipshue.com','wemo.com','kasa.com',
+    'govee.com','lifx.com','nanoleaf.me',
+    'august.com','yale.com','schlage.com'
+]
+
+# --- Combine ---
+ALL_SERVICE_PLATFORMS = (
+    meal_delivery_platforms + vpn_platforms + hosting_platforms +
+    cloud_services + security_services + streaming_platforms +
+    telecom_services
+)
+ALL_RETAILERS = electronics_retailers + general_retailers + home_retailers + mattress_retailers
+ALL_BRANDS = (
+    mattress_brands + phone_brands + computer_brands + tv_brands +
+    audio_brands + appliance_brands + kitchen_brands + outdoor_brands +
+    security_brands + networking_brands + fitness_brands + smart_home_brands
+)
+
+def _domain_matches(domain: str, candidate: str) -> bool:
     """
-    Classify a website as editorial content, service/platform, retailer, or other
+    True if domain equals candidate or is a subdomain of candidate.
+    E.g., tv.youtube.com -> youtube.com
+    """
+    domain = domain.lower()
+    c = candidate.lower().split('/')[0]         # strip any path just in case
+    if c.startswith('www.'): c = c[4:]
+    return domain == c or domain.endswith('.' + c)
+
+# ===== Expanded classification lists (cleaned & deduped) =====
+
+# --- Service / platform domains ---
+meal_delivery_platforms = [
+    'hellofresh.com','blueapron.com','homechef.com',
+    'sunbasket.com','everyplate.com','factor75.com',
+    'greenchef.com','gobble.com','hungryroot.com',
+    'freshly.com','cookunity.com','trifecta.com',
+    'snapkitchen.com','dailyharvest.com','purple-carrot.com'
+]
+
+vpn_platforms = [
+    'nordvpn.com','expressvpn.com','surfshark.com',
+    'protonvpn.com','privateinternetaccess.com','mullvad.net',
+    'cyberghostvpn.com','ipvanish.com','hotspotshield.com',
+    'windscribe.com','purevpn.com','tunnelbear.com'
+]
+
+hosting_platforms = [
+    'hostinger.com','bluehost.com','siteground.com',
+    'godaddy.com','namecheap.com','dreamhost.com',
+    'a2hosting.com','inmotionhosting.com','hostgator.com',
+    'ionos.com','liquidweb.com','kinsta.com',
+    'wpengine.com','nexcess.net','greengeeks.com'
+]
+
+# Claude listed cloud *storage* / software—still treated as platforms
+cloud_services = [
+    'dropbox.com','box.com','pcloud.com',
+    'sync.com','mega.nz','idrive.com',
+    'backblaze.com','carbonite.com','spideroak.com'
+]
+
+# Identity/security services (remove paths)
+security_services = [
+    'lifelock.com','identityguard.com','idshield.com',
+    'identityforce.com','experian.com','aura.com','idnotify.com'
+]
+
+# Streaming / entertainment (fixed Paramount & Apple TV, include both YT TV domains)
+streaming_platforms = [
+    'netflix.com','hulu.com','peacocktv.com',
+    'paramountplus.com','max.com','tv.apple.com',
+    'disneyplus.com','fubo.tv','sling.com',
+    'youtubetv.com','tv.youtube.com','philo.com','directv.com'
+]
+
+# Phone / internet (fixed Mint/Cricket/Boost; MetroPCS legacy kept)
+telecom_services = [
+    'verizon.com','att.com','t-mobile.com',
+    'mintmobile.com','visible.com','cricketwireless.com',
+    'boostmobile.com','metropcs.com','spectrum.com',
+    'xfinity.com','cox.com','frontier.com'
+]
+
+# --- Retailers (keep brands out of here) ---
+electronics_retailers = [
+    'bestbuy.com','bhphotovideo.com','adorama.com',
+    'microcenter.com','newegg.com','crutchfield.com',
+    'abt.com','pcrichard.com','frys.com'
+]
+
+general_retailers = [
+    'amazon.com','walmart.com','target.com',
+    'costco.com','samsclub.com','bjs.com',
+    'macys.com','kohls.com','jcpenney.com'
+]
+
+home_retailers = [
+    'homedepot.com','lowes.com','menards.com',
+    'acehardware.com','wayfair.com','ikea.com',
+    'overstock.com','build.com','ferguson.com'
+]
+
+# don’t include brand stores here (moved to brands)
+mattress_retailers = [
+    'mattressfirm.com','us-mattress.com'
+]
+
+# --- Brands / manufacturers ---
+mattress_brands = [
+    'casper.com','purple.com','tuftandneedle.com',
+    'saatva.com','helix.com','nectar.com',
+    'leesa.com','amerisleep.com','avocado.com',
+    'layla.com','winkbed.com','dreamcloud.com',
+    'bear.com','nolah.com','puffy.com',
+    'novilla.net','zinus.com','sweetnight.com',
+    'sleepnumber.com','tempurpedic.com'
+]
+
+phone_brands = [
+    'apple.com','samsung.com','google.com',
+    'oneplus.com','motorola.com','nokia.com',
+    'xiaomi.com','oppo.com','vivo.com',
+    'nothing.tech','asus.com','sony.com'
+]
+
+computer_brands = [
+    'dell.com','hp.com','lenovo.com',
+    'asus.com','acer.com','msi.com',
+    'razer.com','alienware.com','framework.com'
+]
+
+tv_brands = [
+    'lg.com','samsung.com','sony.com',
+    'tcl.com','hisense.com','vizio.com',
+    'panasonic.com','sharp.com','philips.com'
+]
+
+audio_brands = [
+    'bose.com','jbl.com','sennheiser.com',
+    'sony.com','beats.com','jabra.com',
+    'anker.com','soundcore.com','skullcandy.com',
+    'ultimate-ears.com','marshall.com',
+    'bowers-wilkins.com','klipsch.com'
+]
+
+appliance_brands = [
+    'whirlpool.com','ge.com','kitchenaid.com',
+    'frigidaire.com','bosch.com','electrolux.com',
+    'maytag.com','kenmore.com','dyson.com',
+    'sharkclean.com','bissell.com','hoover.com',
+    'irobot.com','miele.com','thermador.com'
+]
+
+kitchen_brands = [
+    'cuisinart.com','kitchenaid.com','ninja.com',
+    'vitamix.com','instantpot.com','keurig.com',
+    'nespresso.com','breville.com','delonghi.com',
+    'hamiltonbeach.com','oster.com','blackanddecker.com'
+]
+
+outdoor_brands = [
+    'weber.com','traeger.com','biggreenegg.com',
+    'kamadojoe.com','charbroil.com','coleman.com',
+    'yeti.com','rtic.com','pelican.com',
+    'husqvarna.com','toro.com','ryobi.com',
+    'egopowerplus.com','worx.com','greenworks.com'
+]
+
+security_brands = [
+    'arlo.com','ring.com','nest.com',
+    'wyze.com','eufy.com','reolink.com',
+    'lorex.com','vivint.com','adt.com',
+    'simplisafe.com','goabode.com','canary.is'
+]
+
+networking_brands = [
+    'netgear.com','linksys.com','tplink.com','tp-link.com',
+    'asus.com','orbi.com','eero.com',
+    'ubiquiti.com','arris.com','motorola.com'
+]
+
+fitness_brands = [
+    'fitbit.com','garmin.com','whoop.com',
+    'ouraring.com','peloton.com','nordictrack.com',
+    'bowflex.com','nautilus.com','proform.com'
+]
+
+smart_home_brands = [
+    'philipshue.com','wemo.com','kasa.com',
+    'govee.com','lifx.com','nanoleaf.me',
+    'august.com','yale.com','schlage.com'
+]
+
+# --- Combine ---
+ALL_SERVICE_PLATFORMS = (
+    meal_delivery_platforms + vpn_platforms + hosting_platforms +
+    cloud_services + security_services + streaming_platforms +
+    telecom_services
+)
+ALL_RETAILERS = electronics_retailers + general_retailers + home_retailers + mattress_retailers
+ALL_BRANDS = (
+    mattress_brands + phone_brands + computer_brands + tv_brands +
+    audio_brands + appliance_brands + kitchen_brands + outdoor_brands +
+    security_brands + networking_brands + fitness_brands + smart_home_brands
+)
+
+def _domain_matches(domain: str, candidate: str) -> bool:
+    """
+    True if domain equals candidate or is a subdomain of candidate.
+    E.g., tv.youtube.com -> youtube.com
+    """
+    domain = domain.lower()
+    c = candidate.lower().split('/')[0]         # strip any path just in case
+    if c.startswith('www.'): c = c[4:]
+    return domain == c or domain.endswith('.' + c)
+
+def classify_site(url: str) -> str:
+    """
+    Classify URL as 'platform', 'retailer', 'brand', 'tool', or 'editorial'.
     """
     from urllib.parse import urlparse
-    
-    domain = urlparse(url).netloc.lower()
-    if domain.startswith("www."):
-        domain = domain[4:]
-    
-    # Service/Platform providers (less likely to need date matching)
-    service_platforms = [
-        'youtube.com', 'tv.youtube.com', 'hulu.com', 'netflix.com', 'spotify.com',
-        'amazon.com', 'primevideo.com', 'disneyplus.com', 'hbomax.com', 'peacocktv.com',
-        'paramount.com', 'appletv.com', 'sling.com', 'fubo.tv', 'directv.com'
-    ]
-    
-    # Retailers/E-commerce (product pages, not editorial)
-    retailers = [
-        'bestbuy.com', 'walmart.com', 'target.com', 'homedepot.com', 'lowes.com',
-        'costco.com', 'samsclub.com', 'wayfair.com', 'ikea.com', 'ebay.com',
-        'newegg.com', 'bhphotovideo.com', 'adorama.com', 'microcenter.com'
-    ]
-    
-    # Brand/Manufacturer sites (product info, not editorial)
-    brands = [
-        'apple.com', 'samsung.com', 'sony.com', 'lg.com', 'microsoft.com',
-        'dell.com', 'hp.com', 'lenovo.com', 'asus.com', 'acer.com',
-        'coopervision.com', 'acuvue.com', 'bausch.com', 'alcon.com'
-    ]
-    
-    # Quiz/Tool sites
-    if 'quiz' in url.lower() or 'calculator' in url.lower() or 'tool' in url.lower():
+
+    u = url.strip().lower()
+    netloc = urlparse(u).netloc or ''
+    domain = netloc[4:] if netloc.startswith('www.') else netloc
+
+    # Optional: treat obvious quizzes/calculators as tools
+    if any(token in u for token in ('/quiz', 'quiz=', '/calculator', 'calc=', '/tool')):
         return 'tool'
-    
-    # Check classifications
-    if any(platform in domain for platform in service_platforms):
+
+    if any(_domain_matches(domain, d) for d in ALL_SERVICE_PLATFORMS):
         return 'platform'
-    elif any(retailer in domain for retailer in retailers):
+    if any(_domain_matches(domain, d) for d in ALL_RETAILERS):
         return 'retailer'
-    elif any(brand in domain for brand in brands):
+    if any(_domain_matches(domain, d) for d in ALL_BRANDS):
         return 'brand'
-    else:
-        # Default to editorial (news sites, blogs, review sites)
-        return 'editorial'
+    return 'editorial'
 
 def process(df, days_threshold=7, location_code=2840, language_code="en"):
     recs = []
