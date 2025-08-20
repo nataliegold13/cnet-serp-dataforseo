@@ -251,8 +251,8 @@ def dataforseo_search(keyword, location_code=2840, language_code="en", exclude=(
     
     # Create base64 encoded credentials
     cred_string = f"{DATAFORSEO_LOGIN}:{DATAFORSEO_PASSWORD}"
-    cred_bytes = cred_string.encode('ascii')
-    cred_b64 = base64.b64encode(cred_bytes).decode('ascii')
+    cred_bytes = cred_string.encode('utf-8')
+    cred_b64 = base64.b64encode(cred_bytes).decode('utf-8')
     
     headers = {
         'Authorization': f'Basic {cred_b64}',
@@ -266,7 +266,8 @@ def dataforseo_search(keyword, location_code=2840, language_code="en", exclude=(
         "language_code": language_code,
         "device": "desktop",
         "os": "windows",
-        "depth": 10
+        "depth": 10,
+       "calculate_rectangles": False
     }]
     
     try:
